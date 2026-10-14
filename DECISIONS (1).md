@@ -122,7 +122,22 @@ Every non-obvious choice in this project, and why it was made. If asked "why did
 
 ---
 
-## Explicitly out of scope for V1
+## Decision 9 — Late checkpoint (Oct 7): full scope kept, risk accepted explicitly
+
+**Context:** The Week 3 checkpoint set in Decision 8 (Sep 26) to force a scope-cut decision was missed — it did not happen on that date. By Oct 7, the project was still at the Module 1 verification step, well behind the Week 5 position the 8-week replan expected. Cause: a combination of heavier-than-expected college workload, continued post-accident recovery, and lost momentum after the long gap.
+
+**Decision:** Offered a concrete scope cut (drop LSTM from forecasting, simplify the LLM layer to a single prompt template, minimal auth) to protect Nov 1. **Declined — full original scope kept, including LSTM, with the time risk knowingly accepted.**
+
+**Why this is logged as a real decision, not just a status update:** The project now has ~25 days left (Oct 7 → Nov 1) for work the original plan budgeted 100-130 hours for alone, let alone the paper. Keeping full scope is a legitimate choice, but it means the Week 3 checkpoint's purpose — forcing an early, calm cut rather than a late, rushed one — did not happen. This is disclosed honestly rather than pretending the timeline is comfortable.
+
+**New forcing function:** Since a calendar date alone did not trigger a real review last time, the next checkpoint is tied to a concrete deliverable, not just a date: **when Module 2 (all 5 forecasting models) is either complete or still not done by Oct 17**, scope gets revisited then, explicitly, in this document — not silently carried forward again.
+
+**Update (Oct 12):** Module 1 confirmed fully complete via `verify.py` — 500 rows, 8 industries, 5 regions, profitable split 216/284 matching the source CSV exactly, all 7 cohort bins present, sample rows spot-checked correct (e.g. year 2006 correctly binned to cohort 2005). Committed and pushed to GitHub. Module 2 (forecasting) starts now, with **19 days to Nov 1** and the Oct 17 checkpoint 5 days away.
+
+**Module 2 methodology notes (Oct 12):**
+- **Forecast target refined to level, not growth:** Decision 4 named "revenue growth" as the target, but with only 7 cohort points per industry, differencing to get period-over-period growth drops this to 6 points — worse than already thin. Models instead forecast the **level** (mean Revenue (M USD) per Industry × Cohort-Bin). Growth is derived afterward for narrative/interpretation (e.g. "forecasted level implies X% growth over the prior cohort"), not used as the direct model target. This preserves all available data points.
+- **Evaluation — leave-last-cohort-out, pooled across industries:** With only 7 points per series, no single industry supports a real train/test split. Each model trains on the first 6 cohorts (1990–2015) per industry and predicts the held-out 7th (2020) cohort, for all 8 industries. The 8 actual-vs-predicted pairs are pooled across industries to compute each model's 5 regression metrics — this is a panel/cross-sectional backtest, not a per-series one, and is disclosed as such in the paper's Methodology section.
+
 
 
 

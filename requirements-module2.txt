@@ -1,0 +1,8 @@
+pandas
+sqlalchemy
+psycopg2-binary
+statsmodels
+prophet
+xgboost
+torch
+scikit-learn
