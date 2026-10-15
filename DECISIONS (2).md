@@ -138,16 +138,7 @@ Every non-obvious choice in this project, and why it was made. If asked "why did
 - **Forecast target refined to level, not growth:** Decision 4 named "revenue growth" as the target, but with only 7 cohort points per industry, differencing to get period-over-period growth drops this to 6 points — worse than already thin. Models instead forecast the **level** (mean Revenue (M USD) per Industry × Cohort-Bin). Growth is derived afterward for narrative/interpretation (e.g. "forecasted level implies X% growth over the prior cohort"), not used as the direct model target. This preserves all available data points.
 - **Evaluation — leave-last-cohort-out, pooled across industries:** With only 7 points per series, no single industry supports a real train/test split. Each model trains on the first 6 cohorts (1990–2015) per industry and predicts the held-out 7th (2020) cohort, for all 8 industries. The 8 actual-vs-predicted pairs are pooled across industries to compute each model's 5 regression metrics — this is a panel/cross-sectional backtest, not a per-series one, and is disclosed as such in the paper's Methodology section.
 
-
-
-
-- React dashboard (deferred to V2)
-- Plotly interactive visualizations (deferred to V2)
-- Real-time data feeds
-- Multi-user roles beyond basic auth
-- Stockfish-style "what would you add" extensions — N/A, carried over format from Chess project, kept as a placeholder pattern for this doc
-
-**Reasoning:** Each of these adds real time (2-3+ days apiece) without adding to the core question being answered. Cutting them protects the Nov 1 deadline and the research paper timeline running in parallel.
+**Update (Oct 16) — checkpoint met:** Module 2 (all 5 forecasting models) was completed on Oct 14, ahead of the Oct 17 trigger, so no scope cut is forced. Full scope stands (Decision 9 unchanged). The out-of-scope list that previously sat here now has its own section at the end of this file.
 
 ---
 
@@ -159,3 +150,140 @@ Every non-obvious choice in this project, and why it was made. If asked "why did
 - DECISIONS.md (this file)
 - Deployed demo (Docker)
 - Research paper: forecasting + classification comparison forms the Results section
+
+---
+
+## Decision 10 — Division of labor: boilerplate vs. modeling logic (Oct 12)
+
+**Context:** The original intent (stated when Module 1 was handed over as Claude-written) was to shift toward the person writing the modeling logic themselves starting at Module 2 (forecasting), since that's the part that actually needs to be understood and defended in the paper and in interviews — not the database/pipeline plumbing. In practice, under Oct 12's time pressure (19 days to Nov 1, already behind the Sep 26 checkpoint), `forecast.py` was again fully written by Claude, without revisiting that intent explicitly.
+
+**Decision:** Keep momentum — run the Claude-written, already-tested `forecast.py` now to get Module 2 results on schedule. Afterward, once results are in and Module 2 is functionally done, rewrite `forecast.py` independently, using the working version as a reference, purely to build real understanding of the modeling choices (why ARIMA(1,1,0), why the LSTM input is normalized, why evaluation is leave-last-cohort-out pooled across industries, etc.).
+
+**Why this split, not a stricter one:** Rewriting block-by-block *before* seeing results would cost real debugging time that isn't available right now without risking the timeline further. Rewriting *after* a working version exists is lower-risk (a reference implementation to check against) and still forces genuine engagement with the logic, rather than having it stay as code that was only ever run, never understood.
+
+**Going forward:** Module 3 (classification) is the higher-priority module to write hands-on from the start — it uses a real label (`Profitable`) over the full 500 rows, is more central to the paper's core claim, and has a comparatively more favorable time position than Module 2 did. Default for Module 3 is Claude explaining and guiding block-by-block, not writing the full script outright, unless time pressure forces another explicit exception like this one.
+
+---
+
+## Decision 11 — Module 2 forecasting results (Oct 14)
+
+**Status: Module 2 complete.** All 5 models ran successfully (`brew install libomp` resolved an initial XGBoost load failure on macOS — a known issue, not a bug in the code). Pooled metrics, leave-last-cohort-out (train 1990-2015, predict held-out 2020), across all 8 industries:
+
+| Model | MAE | RMSE | MAPE | R² | SMAPE |
+|---|---|---|---|---|---|
+| **Prophet** | **10.28** | **14.97** | **31.4%** | **-0.059** | **23.3%** |
+| Naive | 14.26 | 17.07 | 38.1% | -0.377 | 31.4% |
+| XGBoost | 14.28 | 17.08 | 38.2% | -0.379 | 31.5% |
+| ARIMA | 14.41 | 18.15 | 39.7% | -0.556 | 32.3% |
+| LSTM | 40.29 | 57.30 | 95.5% | -14.52 | 66.5% |
+
+**Findings (for the paper's Results/Discussion sections):**
+- **Prophet is the clear best performer** across every metric — likely because it handles the irregular, non-monotonic shape of these short series more gracefully than a hand-tuned ARIMA order or a model with no explicit trend/seasonality structure.
+- **Naive, XGBoost, and ARIMA cluster closely together**, all meaningfully worse than Prophet but far better than LSTM. This supports the Decision 4 read that there is no strong, easily exploitable trend in the cohort-level data — a flat "last value" guess is nearly as good as a tree-based or classical statistical model here.
+- **LSTM fails badly, exactly as predicted in Decision 4's methodology notes** — MAE roughly 3x the next-worst model, R² of -14.5 (far worse than guessing the mean). This is the expected consequence of training a neural network on 6 data points per series, not a bug. Reported as a legitimate negative result: "deep learning underperforms markedly on short cohort series, consistent with known sample-size sensitivity," not hidden or re-run to "fix."
+- **All models show negative R²** — none beat simply predicting the historical mean. This is an honest limitation of the thin, noisy cohort-bin data (Decision 4's trade-off), disclosed directly in the paper rather than glossed over.
+
+Results saved to `results_forecasting.csv`. Committing now; Module 3 (classification) starts next.
+
+---
+
+## Decision 12 — Module 3 redesign after external review (Oct 14): leave-one-out trend feature, ablation framing
+
+**Context:** An external review of the project (not from this assistant) was shared partway through writing Module 3's Block 1. It caught a real methodological flaw before any code was built around it: the originally planned `revenue_vs_trend` feature (Decision 2) — fitting Prophet on all 7 cohort points per industry, including the startup's own cohort, then using that fitted value as a feature for that same startup — is mildly circular. The startup's own revenue partially shapes the aggregate cohort point used to describe it. Not literal label leakage (profitability is never used to build the forecast), but strong enough to weaken the paper's central claim that industry-trend context improves classification over firm-level features alone.
+
+**Decision 1 — simplified, de-circularized feature:** Replace the Prophet-fitted-value feature with a **leave-one-out industry-cohort mean**. For each startup: `revenue_vs_trend = startup's revenue_musd − mean(revenue_musd of all OTHER startups in the same industry × cohort_bin, excluding itself)`. This removes the circularity (the startup's own value is explicitly excluded from the baseline it's compared against), is cheaper to compute than refitting Prophet 500 times, and still captures the intended idea — how a startup compares to its industry-cohort peers.
+
+**Decision 2 — ablation framing adopted for Module 3:** Instead of training each of the 4 classifiers once on a fixed feature set, train each **twice**: once on firm-level features only (baseline), once with the leave-one-out trend feature added (context). This reframes the central research question from "which classifier is best" to **"does industry-cohort context improve profitability prediction beyond firm-level features alone?"** — a stronger, more testable claim, and the one Decision 2 always intended but hadn't formalized as an explicit comparison.
+
+**Scope note:** The same external review suggested further scope cuts (simplify the LLM layer, treat full-app Docker deployment as optional) echoing the same risk flagged in Decision 9. Re-raised explicitly and **declined again** — Decision 9's call (full scope, risk accepted) stands. Revisit only if a future concrete checkpoint shows it's genuinely not achievable, not preemptively based on this review alone.
+
+---
+
+## Decision 13 — Module 3 feature set and evaluation protocol (Oct 16)
+
+**Features (target: `profitable`):**
+- **Included (firm-level baseline):** funding_rounds, funding_amount_musd, valuation_musd, revenue_musd, employees, market_share_pct, year_founded (company-age proxy), industry, region.
+- **Context feature (ablation arm only):** `revenue_vs_trend` — revenue minus the leave-one-out mean revenue of the same industry × cohort (Decision 12).
+- **Excluded — `cohort_bin`:** it is `year_founded` rounded to a 5-year bucket, so it adds no information once `year_founded` is present. It remains in use for grouping (forecasting module, trend feature).
+- **Excluded — `exit_status`:** Acquired / IPO are outcomes that occur after a startup succeeds, so using them to predict profitability would be leakage. Stated explicitly in the paper's Methodology.
+- **`year_founded` tested, not assumed:** adding it (or `cohort_bin`) changed cross-validated ROC-AUC by under 0.003, far inside the ±0.04 split-to-split noise; it is included for completeness and defensibility, not because it helps.
+
+**Edge case fixed:** The AI × 1995 cohort contains a single startup, so its leave-one-out mean is 0/0 (NaN) and crashed model fitting. Fixed with `.fillna(0.0)` (no peers → zero deviation). One row of 500 affected; disclosed as a limitation.
+
+**Evaluation protocol:**
+- A stratified 80/20 split (400 train / 100 test, seed 42) is run for a first look only. A 100-row test set has a standard error of roughly 5 accuracy points, and tree-model results differed slightly between two machines with different library versions — so the single split is **not** the reported result.
+- **Reported result: 5-fold stratified CV repeated 3 times (15 paired splits)**, same seed for every model and feature set so comparisons are paired. Preprocessing (scaling, one-hot encoding) lives inside the sklearn Pipeline, so it is fit on training folds only.
+- **Metrics:** Accuracy, Precision, Recall, F1, ROC-AUC, plus confusion matrices (out-of-fold, all 500 rows) and the **majority-class baseline accuracy (0.568)**, which any classifier must beat to be useful.
+- **Ablation statistic:** paired ROC-AUC difference (context − baseline) over the 15 splits, per model.
+
+**Known limitation (disclosed):** `revenue_vs_trend` is computed on all 500 rows before splitting, so a training row's feature uses test-row *revenues* (never labels). This is feature-level information sharing, not label leakage, but a stricter design would recompute the feature inside each fold.
+
+---
+
+## Decision 14 — Module 3 results (Oct 16): weak signal, context feature gives no measurable gain
+
+**Status: Module 3 complete.** 4 classifiers x 2 feature sets, 5-fold stratified CV repeated 3 times (15 paired splits, seed 42). Majority-class baseline accuracy = 0.568 (284/500).
+
+**Cross-validated results (mean over 15 splits):**
+
+| Features | Model | Accuracy | Precision | Recall | F1 | ROC-AUC | AUC std |
+|---|---|---|---|---|---|---|---|
+| Baseline | LogisticRegression | 0.574 | 0.508 | 0.367 | 0.424 | 0.580 | 0.045 |
+| Baseline | RandomForest | 0.577 | 0.517 | 0.347 | 0.412 | 0.581 | 0.045 |
+| Baseline | XGBoost | 0.569 | 0.502 | 0.406 | 0.447 | 0.565 | 0.049 |
+| Baseline | LightGBM | 0.546 | 0.470 | 0.392 | 0.425 | 0.551 | 0.037 |
+| Context | LogisticRegression | 0.568 | 0.498 | 0.361 | 0.417 | 0.579 | 0.044 |
+| Context | RandomForest | 0.577 | 0.516 | 0.347 | 0.414 | 0.575 | 0.038 |
+| Context | XGBoost | 0.569 | 0.501 | 0.396 | 0.441 | 0.562 | 0.033 |
+| Context | LightGBM | 0.543 | 0.462 | 0.389 | 0.420 | 0.549 | 0.039 |
+
+**Ablation (paired ROC-AUC difference, context - baseline, 15 splits):**
+
+| Model | delta AUC | std | Splits where context better (of 15) |
+|---|---|---|---|
+| LogisticRegression | -0.0017 | 0.0048 | 5 |
+| RandomForest | -0.0067 | 0.0348 | 4 |
+| XGBoost | -0.0027 | 0.0320 | 8 |
+| LightGBM | -0.0017 | 0.0188 | 8 |
+
+**Confusion matrices (out-of-fold, 500 rows; TN / FP / FN / TP):**
+
+| Features | Model | TN | FP | FN | TP |
+|---|---|---|---|---|---|
+| Baseline | LogisticRegression | 212 | 72 | 140 | 76 |
+| Baseline | RandomForest | 225 | 59 | 146 | 70 |
+| Baseline | XGBoost | 204 | 80 | 133 | 83 |
+| Baseline | LightGBM | 200 | 84 | 137 | 79 |
+| Context | LogisticRegression | 207 | 77 | 141 | 75 |
+| Context | RandomForest | 213 | 71 | 148 | 68 |
+| Context | XGBoost | 205 | 79 | 130 | 86 |
+| Context | LightGBM | 191 | 93 | 137 | 79 |
+
+**Findings (for the paper's Results/Discussion):**
+- **Weak signal overall.** Only LogisticRegression (0.574) and RandomForest (0.577) beat the 0.568 majority baseline on accuracy, by under one point. XGBoost ties it; LightGBM falls below it. ROC-AUC is 0.55-0.58, slightly above chance but with ~0.04 split-to-split noise, so the four models are not meaningfully different from each other.
+- **The industry-cohort context feature does not help.** Mean delta AUC is negative for all four models (-0.0017 to -0.0067), each smaller in magnitude than its std (except LogReg, where both are tiny). Context was better in only 4-8 of 15 splits. Answer to the research question: no measurable improvement from `revenue_vs_trend` over firm-level features.
+- **Models lean toward "not profitable".** In every matrix FN > FP (e.g. RandomForest baseline: 146 FN vs 59 FP), consistent with recall of 0.35-0.41 and with features that carry little signal.
+- **Interpretation.** The dataset appears to be mostly noise with respect to profitability (likely simplified/synthetic). This is reported as a rigorous negative result, enabled by the ablation design (Decision 12), not tuned away.
+
+**Caveats (disclosed):**
+- The 15 CV splits overlap (repeated k-fold), so they are not independent; the std and "splits better" counts are descriptive, not a formal significance test.
+- Hyperparameters were fixed, not tuned. Tuning on a 500-row, near-noise problem would mostly fit noise.
+- Tree-model numbers can shift slightly across library versions, which is why CV means (not the single 100-row split) are the reported result.
+
+---
+
+## Checkpoint status (Oct 16)
+
+- **Oct 17 checkpoint (Decision 9): met.** Module 2 completed Oct 14, so no scope cut is triggered. Full scope stands, with the Nov 1 deadline risk still accepted.
+- Modules 1-3 complete. Next: Module 4 (LLM commentary layer), then API, Streamlit, Docker, paper.
+
+---
+
+## Explicitly out of scope (V1)
+
+- React dashboard (deferred to V2)
+- Plotly interactive visualizations (deferred to V2)
+- Real-time data feeds
+- Multi-user roles beyond basic auth
+
+**Reasoning:** Each of these adds real time (2-3+ days apiece) without adding to the core question being answered. Cutting them protects the Nov 1 deadline and the research paper timeline running in parallel.
