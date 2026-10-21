@@ -1,0 +1,5 @@
+# Modules 4-6 (commentary, API, frontend). Modules 1-3 deps are in your existing requirements files.
+fastapi
+uvicorn[standard]
+streamlit
+requests

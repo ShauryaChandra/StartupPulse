@@ -1,0 +1,18 @@
+# UNTESTED in the build environment - see README "Docker" section.
+# Assumes your Postgres container from Module 1 is already running on port 5432.
+services:
+  api:
+    build: .
+    command: uvicorn src.api:app --host 0.0.0.0 --port 8000
+    environment:
+      STARTUPPULSE_API_KEY: ${STARTUPPULSE_API_KEY:-dev-key}
+      DATABASE_URL: postgresql+psycopg2://postgres:startuppulse@host.docker.internal:5432/startuppulse
+    ports: ["8000:8000"]
+  ui:
+    build: .
+    command: streamlit run app.py --server.port 8501 --server.address 0.0.0.0
+    environment:
+      STARTUPPULSE_API_URL: http://api:8000
+      STARTUPPULSE_API_KEY: ${STARTUPPULSE_API_KEY:-dev-key}
+    ports: ["8501:8501"]
+    depends_on: [api]

@@ -29,7 +29,7 @@ def describe_peer_position(revenue_vs_trend: float, industry: str, cohort: int) 
     """How this startup's revenue compares with peers (leave-one-out feature)."""
     if abs(revenue_vs_trend) < 1.0:
         return (f"Its revenue is about level with other {industry} startups "
-                f"founded in the {cohort}s.")
+                f"from the {cohort} cohort.")
     direction = "above" if revenue_vs_trend > 0 else "below"
     return (f"Its revenue is ${abs(revenue_vs_trend):.1f}M {direction} the average of "
             f"other {industry} startups from the {cohort} cohort.")
