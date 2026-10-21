@@ -218,9 +218,13 @@ Results saved to `results_forecasting.csv`. Committing now; Module 3 (classifica
 
 **Known limitation (disclosed):** `revenue_vs_trend` is computed on all 500 rows before splitting, so a training row's feature uses test-row *revenues* (never labels). This is feature-level information sharing, not label leakage, but a stricter design would recompute the feature inside each fold.
 
+**Resolved (Oct 21):** the feature is now recomputed inside each fold; see Decision 15.
+
 ---
 
 ## Decision 14 — Module 3 results (Oct 16): weak signal, context feature gives no measurable gain
+
+**Note (Oct 21):** the Context rows in the three tables below were produced with `revenue_vs_trend` computed on all 500 rows before CV. They are kept as the audit trail and are **superseded by Decision 15** (in-fold feature). Baseline rows are unchanged and remain final.
 
 **Status: Module 3 complete.** 4 classifiers x 2 feature sets, 5-fold stratified CV repeated 3 times (15 paired splits, seed 42). Majority-class baseline accuracy = 0.568 (284/500).
 
@@ -272,10 +276,78 @@ Results saved to `results_forecasting.csv`. Committing now; Module 3 (classifica
 
 ---
 
+## Decision 15 — Context feature recomputed inside each CV fold (Oct 21)
+
+**Context:** Decision 13 disclosed that `revenue_vs_trend` was computed on all 500 rows before CV, so a training row's feature used validation rows' revenues (never labels). The same weakness was raised again on Oct 21 (suggestion from another AI assistant, relayed by the user; also already flagged by Claude). Fixed rather than only disclosed, because the feature is the center of the paper's ablation.
+
+**Change:** a custom pipeline step, `PeerTrend` (`src/peer_trend.py`), computes the feature from the training rows of each fold only:
+- **Training rows:** leave-one-out mean of the other *training* startups in the same industry x cohort (itself excluded, Decision 12).
+- **Validation rows / new startups:** revenue minus the mean of the *training* startups in the same industry x cohort.
+- **No peers** (empty or single-member group): 0.0, same rule as before.
+- `cohort_bin` is used only as an input to this step; it is still not a model feature (Decision 13's exclusion stands).
+
+**Verification (on stand-in data, before the real run):** (1) changing validation rows' revenues leaves every training feature unchanged; (2) one validation row's feature is unaffected by other validation rows; (3) training features equal a manual leave-one-out computed on training data only; (4) a validation row's feature equals its revenue minus the training-group mean. All passed. On the real data, the **Baseline rows reproduced exactly** (AUC 0.580 / 0.581 / 0.565 / 0.551), confirming nothing else changed.
+
+**Final results, Context arm (5-fold stratified CV x3, 15 paired splits, seed 42):**
+
+| Features | Model | Accuracy | Precision | Recall | F1 | ROC-AUC | AUC std |
+|---|---|---|---|---|---|---|---|
+| Context (in-fold) | LogisticRegression | 0.569 | 0.501 | 0.363 | 0.419 | 0.579 | 0.044 |
+| Context (in-fold) | RandomForest | 0.573 | 0.506 | 0.329 | 0.396 | 0.566 | 0.036 |
+| Context (in-fold) | XGBoost | 0.559 | 0.481 | 0.381 | 0.423 | 0.559 | 0.037 |
+| Context (in-fold) | LightGBM | 0.554 | 0.481 | 0.411 | 0.441 | 0.546 | 0.037 |
+
+**Final ablation (paired ROC-AUC difference, context - baseline, 15 splits):**
+
+| Model | delta AUC | std | Splits where context better (of 15) |
+|---|---|---|---|
+| LogisticRegression | -0.0011 | 0.0073 | 7 |
+| RandomForest | -0.0156 | 0.0292 | 4 |
+| XGBoost | -0.0058 | 0.0281 | 6 |
+| LightGBM | -0.0044 | 0.0220 | 6 |
+
+**Final confusion matrices, Context arm (out-of-fold, 500 rows; TN / FP / FN / TP):**
+
+| Features | Model | TN | FP | FN | TP |
+|---|---|---|---|---|---|
+| Context (in-fold) | LogisticRegression | 209 | 75 | 143 | 73 |
+| Context (in-fold) | RandomForest | 214 | 70 | 148 | 68 |
+| Context (in-fold) | XGBoost | 203 | 81 | 135 | 81 |
+| Context (in-fold) | LightGBM | 195 | 89 | 128 | 88 |
+
+**Findings:**
+- **The conclusion is unchanged, now on a leak-free evaluation:** mean delta AUC is negative for all four models (-0.0011 to -0.0156), each smaller in magnitude than its split-to-split std, and context was better in only 4-7 of 15 splits. The industry-cohort context feature gives no measurable improvement over firm-level features.
+- **If anything the feature adds noise:** RandomForest drops the most (-0.0156), but this is still inside its std (0.029), so it is reported as "no measurable gain", not as harm.
+- **Accuracy vs the 0.568 majority baseline (Context arm):** only RandomForest (0.573) is above it; LogisticRegression (0.569) ties; XGBoost (0.559) and LightGBM (0.554) are below. FN > FP for all four models.
+
+**Remaining caveats:** the 15 splits overlap, so std and "splits better" are descriptive, not a significance test. Each fold's peer groups are built from about 80% of the data, so the in-fold feature is somewhat noisier than the all-data version by construction. A descriptive `revenue_vs_trend` column is still computed on all rows, but only for the app's peer-comparison text; no model reads it.
+
+---
+
+## Decision 16 — Modules 4-6 built; priorities reset (Oct 21)
+
+**Context:** The final report is now due Oct 22 (to the supervising professor); the presentation is at the end of the month. The user chose to finish the working project first and write the report afterward.
+
+**What was built:** a template-based commentary layer (`commentary.py`), a shared service layer (`service.py`), a FastAPI backend (`api.py`), a Streamlit frontend (`app.py`, calls the API over HTTP), README, ROADMAP, and Docker files. The user confirmed on Oct 21 that the app runs on their machine.
+
+**Choices:**
+- **Served model:** Logistic Regression on firm-level (baseline) features. The context feature gave no gain (Decisions 14-15), and Logistic Regression's AUC (0.580) ties the best model while giving the simplest probabilities to explain. Chosen after seeing CV results, a mild selection effect that is inside noise.
+- **Known startups** get an out-of-fold probability (scored by a fold that did not train on them); startups entered by hand use the model trained on all 500 rows.
+- **Commentary is template-based, not an LLM call:** no API key was available and the deadline is tight. The function signature is stable, so a real LLM can replace it later (V2). It always includes a reliability caveat quoting the real numbers (AUC about 0.58, 56.8% majority baseline, 7-point series). Wording thresholds: P >= 0.60 "leans profitable", <= 0.40 "leans not profitable", otherwise "close to a coin flip". The text only explains; it never changes a prediction (Decision 6).
+- **Forecast in the app:** Prophet (seasonality off) fit on all 7 cohorts, predicting the 2025 cohort. This is re-implemented in `service.py`, so its settings may differ slightly from Module 2's `forecast.py`; Module 2's reported numbers are unchanged.
+- **Auth:** one shared API key in the `X-API-Key` header, read from an environment variable. Demo-grade, not production security.
+
+**Not verified:** the Docker files are untested and need `DB_URL` in `classify.py` to read an environment variable.
+
+**Decision 10 note:** these modules are mostly plumbing and were written by Claude. The owed rewrite of `forecast.py` by the user (for understanding) is still outstanding.
+
+---
+
 ## Checkpoint status (Oct 16)
 
 - **Oct 17 checkpoint (Decision 9): met.** Module 2 completed Oct 14, so no scope cut is triggered. Full scope stands, with the Nov 1 deadline risk still accepted.
 - Modules 1-3 complete. Next: Module 4 (LLM commentary layer), then API, Streamlit, Docker, paper.
+- **Update (Oct 21):** Modules 4-6 built and running locally (Decision 16); in-fold context feature adopted (Decision 15). Remaining: final report (due Oct 22), presentation preparation, Docker verification.
 
 ---
 

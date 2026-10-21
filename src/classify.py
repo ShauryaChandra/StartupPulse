@@ -52,6 +52,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
+from peer_trend import PeerTrend
 from sklearn.metrics import (accuracy_score, precision_score, recall_score, f1_score, roc_auc_score)
 
 SEED = 42
@@ -65,7 +66,9 @@ CATEGORICAL = ["industry", "region"]
 
 FEATURE_SETS = {
     "baseline (firm-level only)": NUMERIC + CATEGORICAL,
-    "context (+ revenue_vs_trend)": NUMERIC + CATEGORICAL + ["revenue_vs_trend"],
+    # cohort_bin is NOT a model input: build_pipeline uses it only to compute the
+    # in-fold peer trend (Decision 15).
+    "context (+ revenue_vs_trend)": NUMERIC + CATEGORICAL + ["cohort_bin"],
 }
 
 def make_models() -> dict:
@@ -82,13 +85,15 @@ def build_pipeline(model, features: list) -> Pipeline:
     """Scale numeric columns, one-hot encode categoricals, then fit the model.
     Because the scaler lives INSIDE the pipeline, it is fit on training data only,
     so no test-set information leaks into preprocessing."""
-    numeric = [c for c in features if c in NUMERIC or c == "revenue_vs_trend"]
+    numeric = [c for c in features if c in NUMERIC]
     categorical = [c for c in features if c in CATEGORICAL]
-    prep = ColumnTransformer([
-        ("num", StandardScaler(), numeric),
-        ("cat", OneHotEncoder(handle_unknown="ignore"), categorical),
-    ])
-    return Pipeline([("prep", prep), ("model", model)])
+    parts = [("num", StandardScaler(), numeric),
+             ("cat", OneHotEncoder(handle_unknown="ignore"), categorical)]
+    if "cohort_bin" in features:  # context arm: peer trend computed inside each fold
+        parts.append(("trend", Pipeline([("peer", PeerTrend()),
+                                         ("scale", StandardScaler())]),
+                      ["industry", "cohort_bin", "revenue_musd"]))
+    return Pipeline([("prep", ColumnTransformer(parts)), ("model", model)])
 
 def score(y_true, y_pred, y_prob) -> dict:
     return {
