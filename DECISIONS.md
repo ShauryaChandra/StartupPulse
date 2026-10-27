@@ -343,11 +343,26 @@ Results saved to `results_forecasting.csv`. Committing now; Module 3 (classifica
 
 ---
 
+## Decision 17 — Final report, presentation and demo fixes (Oct 27): project closed
+
+**Status: V1 complete and submitted.** The final report went to the supervisor; the presentation was delivered on Oct 27, ahead of the Nov 1 deadline. Full scope was kept (Decisions 9, 12), and the deadline was met.
+
+**Final report (PBL format, ~37 pages incl. annexures):** follows the department template (Introduction, Background Theory, Methodology, Result and Analysis, Conclusion, References) with a clickable table of contents, list of tables and list of figures; all code is in Annexures A-F. A review pass removed unsupported claims (e.g. a statement that most published studies overstate accuracy), redrew Fig.5, added a Fig.8 slot for an app screenshot, and fixed the Chapter 4 title and all static page numbers.
+
+**Demo bug fixed (commentary.py):** the commentary wrote money as `$35.3M ... $38.2M`. Streamlit renders text between two `$` signs as a LaTeX formula, which produced garbled text ("downabout838.2M"). Amounts are now written as `35.3M USD`, matching the rest of the app. Lesson: never put raw `$` in text passed to `st.write` / `st.markdown`. Predictions and metrics were unaffected; this was display-only.
+
+**Reading of the numbers (for the demo and viva):** an individual prediction such as 56% is a probability for one startup; ROC-AUC about 0.58 is how well the model ranks profitable above unprofitable startups across all 500. Neither is evidence of high predictive accuracy, and the app says so.
+
+**Still open (not blocking V1):** Docker files untested; the user's independent rewrite of `forecast.py` (Decision 10) is still owed; the Python version in the report's Table 1 (3.9) was inferred and should be confirmed; region effect was never tested separately.
+
+---
+
 ## Checkpoint status (Oct 16)
 
 - **Oct 17 checkpoint (Decision 9): met.** Module 2 completed Oct 14, so no scope cut is triggered. Full scope stands, with the Nov 1 deadline risk still accepted.
 - Modules 1-3 complete. Next: Module 4 (LLM commentary layer), then API, Streamlit, Docker, paper.
 - **Update (Oct 21):** Modules 4-6 built and running locally (Decision 16); in-fold context feature adopted (Decision 15). Remaining: final report (due Oct 22), presentation preparation, Docker verification.
+- **Update (Oct 27):** report submitted and presentation done (Decision 17). Only optional follow-ups remain (Docker check, `forecast.py` rewrite).
 
 ---
 

@@ -31,7 +31,7 @@ def describe_peer_position(revenue_vs_trend: float, industry: str, cohort: int) 
         return (f"Its revenue is about level with other {industry} startups "
                 f"from the {cohort} cohort.")
     direction = "above" if revenue_vs_trend > 0 else "below"
-    return (f"Its revenue is ${abs(revenue_vs_trend):.1f}M {direction} the average of "
+    return (f"Its revenue is {abs(revenue_vs_trend):.1f}M USD {direction} the average of "
             f"other {industry} startups from the {cohort} cohort.")
 
 
@@ -44,8 +44,8 @@ def describe_forecast(industry: str, last_cohort: int, last_value: float,
     else:
         move = f"{'up' if change > 0 else 'down'} about {abs(change):.0f}%"
     return (f"{model} projects average revenue for {industry} startups in the "
-            f"{forecast_cohort} cohort at about ${forecast_value:.1f}M, {move} "
-            f"versus the {last_cohort} cohort (${last_value:.1f}M).")
+            f"{forecast_cohort} cohort at about {forecast_value:.1f}M USD, {move} "
+            f"versus the {last_cohort} cohort ({last_value:.1f}M USD).")
 
 
 def reliability_note() -> str:
