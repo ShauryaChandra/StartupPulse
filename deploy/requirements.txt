@@ -1,0 +1,11 @@
+pandas
+numpy
+scikit-learn
+xgboost
+lightgbm
+prophet
+fastapi
+uvicorn[standard]
+pydantic
+sqlalchemy
+psycopg2-binary
